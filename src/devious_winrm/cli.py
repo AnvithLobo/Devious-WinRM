@@ -1,5 +1,5 @@
 """Entry point for the CLI application."""
-import importlib
+import importlib.metadata
 from typing import Annotated
 
 import httpcore
@@ -24,6 +24,7 @@ print_info(f"Devious-WinRM v{VERSION} by Pablo Comino (@1upbyte)")
 desc = {}
 desc["username"] = "Username used for authentication."
 desc["password"] = "Password used for authentication. Cannot be used with an NTLM hash."  # noqa: S105
+desc["ssl"] = "Enable SSL (HTTPS) connection."
 desc["port"] = "Port of remote host, 5985 by default, 5986 when using SSL."
 desc["kerberos"] = ("Kerberos authentication. If no username is provided,"
     " uses cached TGT. Requires specifiying a domain controller.")
@@ -35,6 +36,7 @@ desc["dc"] = ("FQDN for the domain controller."
 flags = {}
 flags["username"] = typer.Option("-u", "--username", help=desc["username"])
 flags["password"] = typer.Option("-p", "--password", help=desc["password"])
+flags["ssl"] = typer.Option("-s", "-S", "--ssl", help=desc["ssl"])
 flags["port"] = typer.Option("-P", "--port", help=desc["port"])
 flags["kerberos"] = typer.Option("-k", "--kerberos", help=desc["kerberos"])
 flags["nt_hash"] = typer.Option("-H", "--hash", help=desc["nt_hash"])
@@ -43,12 +45,20 @@ flags["dc"] = typer.Option("--domain-controller", "--dc", help=desc["dc"])
 def cli(host: Annotated[str, typer.Argument()],  # noqa: C901, PLR0912, PLR0913
     username: Annotated[str, flags["username"]] = None,
     password: Annotated[str, flags["password"]] = None,
-    port: Annotated[int, flags["port"]] = 5985,
+    port: Annotated[int | None, flags["port"]] = None,
+    ssl: Annotated[bool, flags["ssl"]] = False,  # noqa: FBT002
     kerberos: Annotated[bool, flags["kerberos"]] = False,  # noqa: FBT002
     nt_hash: Annotated[str, flags["nt_hash"]] = None,
     dc: Annotated[str | None, flags["dc"]]=None,
 ) -> None:
     """Parse command line arguments and forward them to the terminal."""
+    if port is None:
+        port = 5986 if ssl else 5985
+    elif port == 5986 and not ssl:
+        ssl = True
+
+    scheme = "https" if ssl else "http"
+
     if nt_hash is not None:
         if password is not None:
             error = "Password and NTLM hash cannot be used together."
@@ -81,6 +91,7 @@ def cli(host: Annotated[str, typer.Argument()],  # noqa: C901, PLR0912, PLR0913
             username=username,
             password=password,
             port=port,
+            scheme=scheme,
             auth=auth,
             read_timeout=500, # A command timing out is difficult to recover.
             )
